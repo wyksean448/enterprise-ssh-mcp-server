@@ -31,10 +31,24 @@ import {
 import { TransferManager } from "./transfer-manager.js";
 import { assertNonEmpty, setCompactJsonResponse, toToolResult } from "./tool-result.js";
 
-const server = new McpServer({
-  name: "enterprise-ssh-mcp-server",
-  version: "0.1.2",
-});
+const SERVER_INSTRUCTIONS = [
+  "This server provides SSH/SFTP tools for configured remote hosts.",
+  "For quick remote inspection or health checks, prefer ssh_check_profile.",
+  "For one-shot commands on a configured profile, prefer ssh_run_profile instead of ssh_connect_profile + ssh_exec.",
+  "Use ssh_connect_profile plus session tools only when the user explicitly needs a persistent session, shell, SFTP workflow, transfer job, or tunnel.",
+  "Do not use local shell commands to simulate remote SSH checks when an SSH profile tool can do the work.",
+  "Dangerous tools such as tunnels, rm, chmod, chown, and disconnect_all are hidden unless explicitly enabled by runtime config.",
+].join(" ");
+
+const server = new McpServer(
+  {
+    name: "enterprise-ssh-mcp-server",
+    version: "0.1.3",
+  },
+  {
+    instructions: SERVER_INSTRUCTIONS,
+  },
+);
 
 const envPath = defaultEnvPath();
 const profiles = new ProfileRegistry(envPath);
@@ -106,6 +120,37 @@ const DANGEROUS_TOOL_NAMES = new Set([
   "sftp_chown",
 ]);
 
+const READ_ONLY_TOOL_NAMES = new Set([
+  "ssh_get_config",
+  "ssh_list_profiles",
+  "ssh_check_profile",
+  "ssh_run_profile",
+  "ssh_list_sessions",
+  "ssh_exec",
+  "ssh_shell_read",
+  "ssh_shell_list",
+  "sftp_list",
+  "sftp_stat",
+  "sftp_read_file",
+  "sftp_readlink",
+  "sftp_realpath",
+  "sftp_download_start",
+  "sftp_download_profile",
+  "sftp_transfer_status",
+  "sftp_transfer_list",
+]);
+
+const LOCAL_ONLY_TOOL_NAMES = new Set([
+  "ssh_get_config",
+  "ssh_reload_config",
+  "ssh_list_profiles",
+  "ssh_reload_profiles",
+  "ssh_list_sessions",
+  "sftp_transfer_status",
+  "sftp_transfer_list",
+  "sftp_transfer_cancel",
+]);
+
 const REMOTE_CHECK_NAMES = ["identity", "pwd", "os", "uptime", "disk", "memory", "processes"] as const;
 const remoteCheckNameSchema = z.enum(REMOTE_CHECK_NAMES);
 type RemoteCheckName = z.infer<typeof remoteCheckNameSchema>;
@@ -159,7 +204,17 @@ function registerTool<
     return undefined;
   }
 
-  return server.registerTool(name, config, cb);
+  return server.registerTool(name, { ...config, annotations: toolAnnotations(name, config.annotations) }, cb);
+}
+
+function toolAnnotations(name: string, annotations: ToolAnnotations | undefined): ToolAnnotations {
+  const readOnlyHint = READ_ONLY_TOOL_NAMES.has(name);
+  return {
+    readOnlyHint,
+    destructiveHint: readOnlyHint ? false : DANGEROUS_TOOL_NAMES.has(name),
+    openWorldHint: !LOCAL_ONLY_TOOL_NAMES.has(name),
+    ...annotations,
+  };
 }
 
 registerTool(

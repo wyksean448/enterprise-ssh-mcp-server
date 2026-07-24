@@ -110,6 +110,14 @@ npm run build
 - 大文件传输：`sftp_upload_start`、`sftp_upload_profile`、`sftp_download_start`、`sftp_download_profile`、`sftp_transfer_status`、`sftp_transfer_list`、`sftp_transfer_cancel`
 - 端口转发：`ssh_tunnel_local_start`、`ssh_tunnel_remote_start`、`ssh_tunnel_list`、`ssh_tunnel_stop`
 
+## Agent 使用建议
+
+- 远端健康检查、环境确认、服务器巡检：优先使用 `ssh_check_profile`。
+- 单条远端命令：优先使用 `ssh_run_profile`，避免先 connect 再 exec。
+- 需要连续多步操作、交互 shell、SFTP 批量操作、后台传输或 tunnel 时，再使用 `ssh_connect_profile` 创建持久会话。
+- 不要用本地 shell 模拟远端检查；已经配置 SSH profile 时，应调用 MCP SSH 工具。
+- 默认 `agent` 模式会隐藏 tunnel、rm、chmod、chown、disconnect_all 等高风险工具；如确实需要，显式设置 `SSH_MCP_TOOLSET=full` 和 `SSH_MCP_ENABLE_DANGEROUS_TOOLS=true` 后重启 MCP client。
+
 ## 大文件上传策略
 
 大文件不要用 `sftp_write_file`。请使用 `sftp_upload_start`：
