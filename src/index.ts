@@ -9,7 +9,7 @@ import type { PseudoTtyOptions } from "ssh2";
 import { defaultEnvPath, ProfileRegistry } from "./env-profiles.js";
 import { RuntimeConfigRegistry } from "./runtime-config.js";
 import { SessionRegistry } from "./session-registry.js";
-import type { SessionSummary } from "./ssh-session.js";
+import type { ExecResult, SessionSummary } from "./ssh-session.js";
 import {
   entryToJson,
   sftpChmod,
@@ -33,7 +33,7 @@ import { assertNonEmpty, setCompactJsonResponse, toToolResult } from "./tool-res
 
 const server = new McpServer({
   name: "enterprise-ssh-mcp-server",
-  version: "0.1.0",
+  version: "0.1.1",
 });
 
 const envPath = defaultEnvPath();
@@ -69,8 +69,11 @@ type ToolConfig<
 
 const AGENT_TOOL_NAMES = new Set([
   "ssh_get_config",
+  "ssh_reload_config",
   "ssh_list_profiles",
+  "ssh_reload_profiles",
   "ssh_connect_profile",
+  "ssh_check_profile",
   "ssh_run_profile",
   "ssh_list_sessions",
   "ssh_disconnect",
@@ -102,6 +105,43 @@ const DANGEROUS_TOOL_NAMES = new Set([
   "sftp_chmod",
   "sftp_chown",
 ]);
+
+const REMOTE_CHECK_NAMES = ["identity", "pwd", "os", "uptime", "disk", "memory", "processes"] as const;
+const remoteCheckNameSchema = z.enum(REMOTE_CHECK_NAMES);
+type RemoteCheckName = z.infer<typeof remoteCheckNameSchema>;
+
+const DEFAULT_REMOTE_CHECKS: RemoteCheckName[] = ["identity", "pwd", "os", "uptime", "disk", "memory"];
+
+const REMOTE_CHECK_COMMANDS: Record<RemoteCheckName, { title: string; command: string }> = {
+  identity: {
+    title: "User and host identity",
+    command: "printf 'whoami: '; whoami; printf 'hostname: '; hostname; id",
+  },
+  pwd: {
+    title: "Current directory",
+    command: "pwd",
+  },
+  os: {
+    title: "Operating system",
+    command: "uname -a || ver",
+  },
+  uptime: {
+    title: "Uptime",
+    command: "uptime || wmic os get lastbootuptime",
+  },
+  disk: {
+    title: "Disk usage",
+    command: "df -h . || wmic logicaldisk get caption,freespace,size",
+  },
+  memory: {
+    title: "Memory usage",
+    command: "free -h || vm_stat || wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value",
+  },
+  processes: {
+    title: "Top processes",
+    command: "ps aux | head -n 15 || tasklist",
+  },
+};
 
 function registerTool<
   OutputArgs extends ZodRawShapeCompat | AnySchema,
@@ -231,7 +271,8 @@ registerTool(
   "ssh_run_profile",
   {
     title: "Run command on SSH profile",
-    description: "Agent-friendly one-shot command: connect to a named profile, run a command, and disconnect unless keepSession=true.",
+    description:
+      "Use this first for one-shot remote commands on a configured SSH profile. Prefer this over connect + exec when the user only asks to run a command or inspect a server.",
     inputSchema: {
       profileName: z.string().min(1),
       command: z.string().min(1),
@@ -273,6 +314,67 @@ registerTool(
         if (!args.keepSession) {
           await sessions.disconnect(connected.session.id);
         }
+      }
+    }),
+);
+
+registerTool(
+  "ssh_check_profile",
+  {
+    title: "Check SSH profile host",
+    description:
+      "Agent-friendly one-shot remote health check: connect to a named profile, run safe built-in inspection commands, return structured results, and disconnect.",
+    inputSchema: {
+      profileName: z.string().min(1),
+      checks: z.array(remoteCheckNameSchema).default(DEFAULT_REMOTE_CHECKS),
+      workingDirectory: z.string().min(1).optional(),
+      timeoutMs: z.number().int().min(1).optional(),
+      maxOutputBytes: z.number().int().min(1).max(64 * 1024 * 1024).optional(),
+    },
+  },
+  async (args) =>
+    toToolResult(async () => {
+      const config = runtimeConfig.get();
+      const connected = await connectProfileSession({
+        profileName: args.profileName,
+        keyboardResponses: [],
+        strictVendor: true,
+        debug: false,
+      });
+      const session = sessions.get(connected.session.id);
+      const selectedChecks = [...new Set(args.checks)];
+
+      try {
+        const checks = [];
+        for (const checkName of selectedChecks) {
+          const check = REMOTE_CHECK_COMMANDS[checkName];
+          checks.push(
+            await runRemoteCheck({
+              name: checkName,
+              title: check.title,
+              command: buildRemoteCommand(check.command, args.workingDirectory),
+              timeoutMs: args.timeoutMs ?? config.defaultExecTimeoutMs,
+              maxOutputBytes: args.maxOutputBytes ?? config.defaultMaxOutputBytes,
+              execute: (command) =>
+                session.exec({
+                  command,
+                  stdinEncoding: "utf8",
+                  outputEncoding: "utf8",
+                  timeoutMs: args.timeoutMs ?? config.defaultExecTimeoutMs,
+                  maxOutputBytes: args.maxOutputBytes ?? config.defaultMaxOutputBytes,
+                }),
+            }),
+          );
+        }
+
+        return {
+          ok: true,
+          profile: connected.profile,
+          session: connected.session,
+          checks,
+        };
+      } finally {
+        await sessions.disconnect(connected.session.id);
       }
     }),
 );
@@ -367,7 +469,8 @@ registerTool(
   "ssh_exec",
   {
     title: "Execute remote command",
-    description: "Run a command on a persistent SSH session and capture bounded stdout/stderr.",
+    description:
+      "Run a command on an existing persistent SSH session and capture bounded stdout/stderr. Requires sessionId; use ssh_run_profile for one-shot profile commands.",
     inputSchema: {
       sessionId: sessionIdSchema,
       command: z.string().min(1),
@@ -1149,6 +1252,43 @@ function buildRemoteCommand(command: string, workingDirectory: string | undefine
 
 function quotePosixShellArg(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+interface RemoteCheckInput {
+  name: RemoteCheckName;
+  title: string;
+  command: string;
+  timeoutMs: number;
+  maxOutputBytes: number;
+  execute: (command: string) => Promise<ExecResult>;
+}
+
+async function runRemoteCheck(input: RemoteCheckInput): Promise<{
+  name: RemoteCheckName;
+  title: string;
+  command: string;
+  ok: boolean;
+  result?: ExecResult;
+  error?: string;
+}> {
+  try {
+    const result = await input.execute(input.command);
+    return {
+      name: input.name,
+      title: input.title,
+      command: input.command,
+      ok: result.exitCode === 0 && !result.timedOut,
+      result,
+    };
+  } catch (error) {
+    return {
+      name: input.name,
+      title: input.title,
+      command: input.command,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function compactExecPty(input: boolean | z.infer<typeof ptySchema> | undefined): PseudoTtyOptions | boolean | undefined {

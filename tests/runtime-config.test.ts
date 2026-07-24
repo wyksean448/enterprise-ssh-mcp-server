@@ -7,6 +7,21 @@ import { describe, expect, it } from "vitest";
 import { loadRuntimeConfig } from "../src/runtime-config.js";
 
 describe("runtime config", () => {
+  it("uses safe agent defaults when no .env exists", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "ssh-mcp-runtime-config-test-"));
+    const envPath = join(tempDir, ".env");
+
+    try {
+      expect(loadRuntimeConfig(envPath)).toMatchObject({
+        toolset: "agent",
+        compactJson: true,
+        enableDangerousTools: false,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("loads non-secret defaults from .env", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-mcp-runtime-config-test-"));
     const envPath = join(tempDir, ".env");

@@ -102,7 +102,7 @@ npm run build
 
 ## 能力范围
 
-- Profile：`ssh_list_profiles`、`ssh_reload_profiles`、`ssh_connect_profile`、`ssh_run_profile`
+- Profile：`ssh_list_profiles`、`ssh_reload_profiles`、`ssh_connect_profile`、`ssh_check_profile`、`ssh_run_profile`
 - 会话：`ssh_connect`、`ssh_list_sessions`、`ssh_disconnect`、`ssh_disconnect_all`、`ssh_rekey`
 - 命令：`ssh_exec`，支持 env、stdin、PTY、超时、stdout/stderr 最大字节限制、UTF-8/base64 输出
 - 交互 shell：`ssh_shell_open`、`ssh_shell_write`、`ssh_shell_read`、`ssh_shell_resize`、`ssh_shell_close`、`ssh_shell_list`

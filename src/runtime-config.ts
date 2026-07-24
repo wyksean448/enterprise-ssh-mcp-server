@@ -32,9 +32,9 @@ export interface RuntimeConfig {
 export type Toolset = "agent" | "full";
 
 const DEFAULT_CONFIG: Omit<RuntimeConfig, "envPath"> = {
-  toolset: "full",
-  compactJson: false,
-  enableDangerousTools: true,
+  toolset: "agent",
+  compactJson: true,
+  enableDangerousTools: false,
   defaultSshPort: 22,
   defaultAgentForward: false,
   defaultTryKeyboard: false,
