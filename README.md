@@ -2,27 +2,92 @@
 
 一个基于 `@modelcontextprotocol/sdk` 和 `ssh2` 的 SSH/SFTP MCP stdio server。它把 SSH 连接作为 MCP server 进程内的持久会话保存，支持复用同一个连接执行命令、交互 shell、SFTP 文件管理、大文件后台传输和端口转发。
 
-## 安装与构建
+## 安装与使用
+
+推荐直接通过 npm 启动，无需全局安装。
+
+Windows MCP client 配置：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "enterprise-ssh-mcp-server"]
+    }
+  }
+}
+```
+
+macOS / Linux MCP client 配置：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "npx",
+      "args": ["-y", "enterprise-ssh-mcp-server"]
+    }
+  }
+}
+```
+
+如果已经全局安装：
+
+```powershell
+npm install -g enterprise-ssh-mcp-server
+```
+
+Windows 推荐通过 `cmd /c` 启动 npm 生成的 `.cmd` 命令入口，避免 PowerShell 执行策略影响：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "cmd",
+      "args": ["/c", "enterprise-ssh-mcp"]
+    }
+  }
+}
+```
+
+macOS / Linux 全局安装后可以直接使用命令入口：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "enterprise-ssh-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+如需指定 SSH profile 配置文件：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "cmd",
+      "args": ["/c", "enterprise-ssh-mcp"],
+      "env": {
+        "SSH_MCP_ENV_FILE": "C:\\Users\\yourname\\.enterprise-ssh-mcp\\.env"
+      }
+    }
+  }
+}
+```
+
+## 本地开发
 
 ```powershell
 npm install
 npm run build
 ```
 
-MCP client 配置示例：
-
-```json
-{
-  "mcpServers": {
-    "enterprise-ssh": {
-      "command": "node",
-      "args": ["D:/studyProject/skills/ssh/dist/index.js"]
-    }
-  }
-}
-```
-
-开发期也可以用：
+开发期可以用：
 
 ```json
 {

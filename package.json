@@ -1,6 +1,6 @@
 {
   "name": "enterprise-ssh-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Enterprise SSH/SFTP MCP server with persistent sessions, interactive shells, transfer jobs, and port forwarding.",
   "type": "module",
   "keywords": [
