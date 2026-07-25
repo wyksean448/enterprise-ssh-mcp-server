@@ -8,17 +8,17 @@ import { parseEnvFile, parseProfiles, ProfileRegistry, publicProfile } from "../
 describe("env profile parsing", () => {
   it("parses indexed SSH_MCP_SERVER profiles with uniform field names", () => {
     const variables = parseEnvFile(`
-SSH_MCP_SERVER_1_IP=140.143.165.206
+SSH_MCP_SERVER_1_HOST=prod.example.com
 SSH_MCP_SERVER_1_PORT=22
 SSH_MCP_SERVER_1_NAME=prod
 SSH_MCP_SERVER_1_USER=root
 SSH_MCP_SERVER_1_PASSWORD="change-me"
-SSH_MCP_SERVER_1_ALIASES=production,ai-chat-prod
-SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/ai-chat
+SSH_MCP_SERVER_1_ALIASES=production,example-prod
+SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/example-app
 SSH_MCP_SERVER_1_DESCRIPTION="production server"
 SSH_MCP_SERVER_1_PLATFORM=linux
 SSH_MCP_SERVER_1_ALLOW_EDIT=true
-SSH_MCP_SERVER_1_EDIT_ROOT=/opt/ai-chat
+SSH_MCP_SERVER_1_EDIT_ROOT=/opt/example-app
 SSH_MCP_SERVER_1_MAX_EDIT_FILE_BYTES=2097152
 SSH_MCP_SERVER_1_BACKUP_BEFORE_EDIT=true
 SSH_MCP_SERVER_1_BACKUP_DIR=.mcp-backups
@@ -35,16 +35,16 @@ SSH_MCP_SERVER_2_DISPLAY_NAME="Staging Server"
 
     expect(profiles.get("PROD")).toMatchObject({
       name: "PROD",
-      aliases: ["production", "ai-chat-prod"],
-      host: "140.143.165.206",
+      aliases: ["production", "example-prod"],
+      host: "prod.example.com",
       port: 22,
       username: "root",
       password: "change-me",
-      defaultDir: "/opt/ai-chat",
+      defaultDir: "/opt/example-app",
       description: "production server",
       platform: "linux",
       allowEdit: true,
-      editRoot: "/opt/ai-chat",
+      editRoot: "/opt/example-app",
       maxEditFileBytes: 2_097_152,
       backupBeforeEdit: true,
       backupDir: ".mcp-backups",
@@ -79,15 +79,15 @@ SSH_MCP_SERVER_1_NAME=prod
 
   it("rejects legacy SSH_SERVER profiles", () => {
     const variables = parseEnvFile(`
-SSH_SERVER_AI_CHAT_PROD_HOST=140.143.165.206
-SSH_SERVER_AI_CHAT_PROD_NAME=prod
-SSH_SERVER_AI_CHAT_PROD_ALIASES=ai-chat-prod,prod,production
-SSH_SERVER_AI_CHAT_PROD_USER=root
-SSH_SERVER_AI_CHAT_PROD_PASSWORD="change-me"
-SSH_SERVER_AI_CHAT_PROD_PORT=22
-SSH_SERVER_AI_CHAT_PROD_DEFAULT_DIR=/opt/ai-chat
-SSH_SERVER_AI_CHAT_PROD_DESCRIPTION="ai-chat production server"
-SSH_SERVER_AI_CHAT_PROD_PLATFORM=linux
+SSH_SERVER_EXAMPLE_PROD_HOST=prod.example.com
+SSH_SERVER_EXAMPLE_PROD_NAME=prod
+SSH_SERVER_EXAMPLE_PROD_ALIASES=example-prod,prod,production
+SSH_SERVER_EXAMPLE_PROD_USER=root
+SSH_SERVER_EXAMPLE_PROD_PASSWORD="change-me"
+SSH_SERVER_EXAMPLE_PROD_PORT=22
+SSH_SERVER_EXAMPLE_PROD_DEFAULT_DIR=/opt/example-app
+SSH_SERVER_EXAMPLE_PROD_DESCRIPTION="example production server"
+SSH_SERVER_EXAMPLE_PROD_PLATFORM=linux
 `);
 
     expect(() => parseProfiles(variables, "test.env")).toThrow("Unsupported SSH profile env schema");
@@ -129,10 +129,10 @@ SSH_MCP_SERVER_1_NAME=example
 SSH_MCP_SERVER_1_HOST=example.com
 SSH_MCP_SERVER_1_ALIASES=example-prod
 SSH_MCP_SERVER_1_USERNAME=deploy
-SSH_MCP_SERVER_1_PASSWORD=secret
-SSH_MCP_SERVER_1_PRIVATE_KEY="private-key"
+SSH_MCP_SERVER_1_PASSWORD=example-password
+SSH_MCP_SERVER_1_PRIVATE_KEY="example-private-key"
 SSH_MCP_SERVER_1_PRIVATE_KEY_PATH=C:/keys/example
-SSH_MCP_SERVER_1_PASSPHRASE=passphrase
+SSH_MCP_SERVER_1_PASSPHRASE=example-passphrase
 SSH_MCP_SERVER_1_AGENT=pageant
 `);
 
@@ -151,8 +151,8 @@ SSH_MCP_SERVER_1_AGENT=pageant
       hasPassphrase: true,
       hasAgent: true,
     });
-    expect(JSON.stringify(publicValue)).not.toContain("secret");
-    expect(JSON.stringify(publicValue)).not.toContain("private-key");
+    expect(JSON.stringify(publicValue)).not.toContain("example-password");
+    expect(JSON.stringify(publicValue)).not.toContain("example-private-key");
   });
 
   it("resolves profiles by formal name and aliases", async () => {
@@ -166,7 +166,7 @@ SSH_MCP_SERVER_1_AGENT=pageant
 SSH_MCP_SERVER_1_NAME=prod
 SSH_MCP_SERVER_1_HOST=example.com
 SSH_MCP_SERVER_1_DISPLAY_NAME="Production Server"
-SSH_MCP_SERVER_1_ALIASES=ai-chat-prod,production
+SSH_MCP_SERVER_1_ALIASES=example-prod,production
 SSH_MCP_SERVER_1_USER=root
 `,
         "utf8",
@@ -176,7 +176,7 @@ SSH_MCP_SERVER_1_USER=root
 
       expect(registry.get("PROD").name).toBe("PROD");
       expect(registry.get("prod").name).toBe("PROD");
-      expect(registry.get("ai-chat-prod").name).toBe("PROD");
+      expect(registry.get("example-prod").name).toBe("PROD");
       expect(() => registry.get("Production Server")).toThrow("SSH profile was not found in .env");
     } finally {
       await rm(tempDir, { recursive: true, force: true });
