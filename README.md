@@ -105,6 +105,7 @@ npm run build
 - Profile：`ssh_list_profiles`、`ssh_reload_profiles`、`ssh_connect_profile`、`ssh_check_profile`、`ssh_run_profile`
 - 会话：`ssh_connect`、`ssh_list_sessions`、`ssh_disconnect`、`ssh_disconnect_all`、`ssh_rekey`
 - 命令：`ssh_exec`，支持 env、stdin、PTY、超时、stdout/stderr 最大字节限制、UTF-8/base64 输出
+- 远程项目编辑：`ssh_project_open`、`ssh_project_tree`、`ssh_project_search`、`ssh_project_stat`、`ssh_file_read`、`ssh_file_patch`、`ssh_project_validate_patch`、`ssh_project_apply_patch`、`ssh_project_diff`、`ssh_project_run_checks`、`ssh_edit_history`、`ssh_edit_rollback`
 - 交互 shell：`ssh_shell_open`、`ssh_shell_write`、`ssh_shell_read`、`ssh_shell_resize`、`ssh_shell_close`、`ssh_shell_list`
 - SFTP 管理：`sftp_list`、`sftp_stat`、`sftp_read_file`、`sftp_write_file`、`sftp_mkdir`、`sftp_rm`、`sftp_rename`、`sftp_chmod`、`sftp_chown`、`sftp_touch`、`sftp_symlink`、`sftp_readlink`、`sftp_realpath`
 - 大文件传输：`sftp_upload_start`、`sftp_upload_profile`、`sftp_download_start`、`sftp_download_profile`、`sftp_transfer_status`、`sftp_transfer_list`、`sftp_transfer_cancel`
@@ -113,10 +114,27 @@ npm run build
 ## Agent 使用建议
 
 - 远端健康检查、环境确认、服务器巡检：优先使用 `ssh_check_profile`。
+- 远程查看/修改项目代码：优先使用 `ssh_project_tree`、`ssh_project_search`、`ssh_file_read`、`ssh_file_patch`、`ssh_project_apply_patch`、`ssh_project_diff`，不要用 shell 拼 `sed`、`cat > file` 来改代码。
 - 单条远端命令：优先使用 `ssh_run_profile`，避免先 connect 再 exec。
 - 需要连续多步操作、交互 shell、SFTP 批量操作、后台传输或 tunnel 时，再使用 `ssh_connect_profile` 创建持久会话。
 - 不要用本地 shell 模拟远端检查；已经配置 SSH profile 时，应调用 MCP SSH 工具。
-- 默认 `agent` 模式会隐藏 tunnel、rm、chmod、chown、disconnect_all 等高风险工具；如确实需要，显式设置 `SSH_MCP_TOOLSET=full` 和 `SSH_MCP_ENABLE_DANGEROUS_TOOLS=true` 后重启 MCP client。
+- 默认 `agent` 模式会隐藏 tunnel、裸 SFTP 写入/上传/删除/移动、chmod、chown、disconnect_all 等高风险工具；如确实需要，显式设置 `SSH_MCP_TOOLSET=full` 和 `SSH_MCP_ENABLE_DANGEROUS_TOOLS=true` 后重启 MCP client。
+
+## 远程项目编辑
+
+编辑工具以 profile 的 `EDIT_ROOT` 或 `DEFAULT_DIR` 作为硬安全边界，`projectRoot` 只能是这个边界内的子目录。写入和 patch 默认要求 `expectedSha256`，也就是先 `ssh_file_read` 读到文件指纹，再带着这个指纹修改，防止覆盖别人刚改过的文件。
+
+推荐工作流：
+
+1. `ssh_project_open`：确认远程项目根目录、git 状态和项目类型。
+2. `ssh_project_tree` / `ssh_project_search`：定位要修改的代码。
+3. `ssh_file_read`：读取目标文件，拿到 `sha256`。
+4. `ssh_file_patch` 或 `ssh_project_apply_patch`：应用单文件或多文件 unified diff。
+5. `ssh_project_diff`：查看远程 git diff。
+6. `ssh_project_run_checks`：运行测试、构建或 lint。
+7. 如需撤回，用 `ssh_edit_history` 找到 `editId`，再调用 `ssh_edit_rollback`。
+
+写入类工具会先保存备份，再用临时文件 + rename 方式原子替换。`ssh_file_write`、`ssh_file_delete`、`ssh_file_move` 属于高风险工具，默认隐藏；常规代码修改应优先使用 patch 工具。
 
 ## 大文件上传策略
 
@@ -157,6 +175,8 @@ SSH_MCP_DEFAULT_TRANSFER_CHUNK_SIZE_BYTES=1048576
 SSH_MCP_DEFAULT_TRANSFER_RESUME=true
 SSH_MCP_DEFAULT_TRANSFER_OVERWRITE=false
 SSH_MCP_DEFAULT_TRANSFER_ATOMIC=false
+SSH_MCP_DEFAULT_MAX_EDIT_FILE_BYTES=1048576
+SSH_MCP_DEFAULT_MAX_PATCH_BYTES=2097152
 SSH_MCP_DEFAULT_LOCAL_TUNNEL_HOST=127.0.0.1
 SSH_MCP_DEFAULT_REMOTE_TUNNEL_HOST=127.0.0.1
 ```
@@ -182,6 +202,13 @@ SSH_MCP_SERVER_1_ALIASES=production,ai-chat-prod
 SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/app
 SSH_MCP_SERVER_1_DESCRIPTION="production server"
 SSH_MCP_SERVER_1_PLATFORM=linux
+SSH_MCP_SERVER_1_ALLOW_EDIT=true
+SSH_MCP_SERVER_1_EDIT_ROOT=/opt/app
+SSH_MCP_SERVER_1_MAX_EDIT_FILE_BYTES=1048576
+SSH_MCP_SERVER_1_BACKUP_BEFORE_EDIT=true
+SSH_MCP_SERVER_1_BACKUP_DIR=.mcp-edit-backups
+SSH_MCP_SERVER_1_ALLOW_DELETE=false
+SSH_MCP_SERVER_1_ALLOW_BINARY_EDIT=false
 
 SSH_MCP_SERVER_2_NAME=staging
 SSH_MCP_SERVER_2_HOST=staging.example.com
@@ -206,6 +233,13 @@ SSH_MCP_SERVER_2_ALIASES=stage
 - `SSH_MCP_SERVER_<N>_DEFAULT_DIR`：默认工作目录。
 - `SSH_MCP_SERVER_<N>_DESCRIPTION`：说明。
 - `SSH_MCP_SERVER_<N>_PLATFORM`：平台标记，例如 `linux`、`windows`、`macos`。
+- `SSH_MCP_SERVER_<N>_ALLOW_EDIT`：是否允许项目编辑工具写入，默认 `false`。
+- `SSH_MCP_SERVER_<N>_EDIT_ROOT`：项目编辑硬边界；省略时使用 `DEFAULT_DIR`。
+- `SSH_MCP_SERVER_<N>_MAX_EDIT_FILE_BYTES`：单个可编辑文件大小上限；省略时使用 `SSH_MCP_DEFAULT_MAX_EDIT_FILE_BYTES`。
+- `SSH_MCP_SERVER_<N>_BACKUP_BEFORE_EDIT`：修改前是否备份，默认 `true`。
+- `SSH_MCP_SERVER_<N>_BACKUP_DIR`：备份目录，必须位于项目根内；省略时备份到文件同目录。
+- `SSH_MCP_SERVER_<N>_ALLOW_DELETE`：是否允许 `ssh_file_delete`，默认 `false`。
+- `SSH_MCP_SERVER_<N>_ALLOW_BINARY_EDIT`：是否允许编辑包含 NUL 字节的二进制文件，默认 `false`。
 
 只支持 `SSH_MCP_SERVER_<N>_*` 这一种格式。旧版 `SSH_SERVER_<PROFILE>_<FIELD>` 不再解析，混入旧字段会直接报错，避免配置契约不一致。
 

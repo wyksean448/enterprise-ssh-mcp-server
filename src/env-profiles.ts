@@ -20,6 +20,13 @@ export interface SshServerProfile {
   defaultDir?: string;
   description?: string;
   platform?: string;
+  allowEdit?: boolean;
+  editRoot?: string;
+  maxEditFileBytes?: number;
+  backupBeforeEdit?: boolean;
+  backupDir?: string;
+  allowDelete?: boolean;
+  allowBinaryEdit?: boolean;
 }
 
 export interface PublicSshServerProfile {
@@ -38,6 +45,13 @@ export interface PublicSshServerProfile {
   defaultDir?: string;
   description?: string;
   platform?: string;
+  allowEdit: boolean;
+  editRoot?: string;
+  maxEditFileBytes?: number;
+  backupBeforeEdit: boolean;
+  backupDir?: string;
+  allowDelete: boolean;
+  allowBinaryEdit: boolean;
 }
 
 type ProfileField =
@@ -53,7 +67,14 @@ type ProfileField =
   | "aliases"
   | "defaultDir"
   | "description"
-  | "platform";
+  | "platform"
+  | "allowEdit"
+  | "editRoot"
+  | "maxEditFileBytes"
+  | "backupBeforeEdit"
+  | "backupDir"
+  | "allowDelete"
+  | "allowBinaryEdit";
 
 const INDEXED_ENV_PREFIX = "SSH_MCP_SERVER_";
 const LEGACY_ENV_PREFIX = "SSH_SERVER_";
@@ -63,13 +84,20 @@ const FIELD_SUFFIXES: Array<{ suffix: string; field: ProfileField }> = [
   { suffix: "PRIVATE_KEY_PATH", field: "privateKeyPath" },
   { suffix: "DISPLAY_NAME", field: "displayName" },
   { suffix: "DEFAULT_DIR", field: "defaultDir" },
+  { suffix: "MAX_EDIT_FILE_BYTES", field: "maxEditFileBytes" },
+  { suffix: "BACKUP_BEFORE_EDIT", field: "backupBeforeEdit" },
+  { suffix: "ALLOW_BINARY_EDIT", field: "allowBinaryEdit" },
   { suffix: "PRIVATE_KEY", field: "privateKey" },
   { suffix: "DESCRIPTION", field: "description" },
   { suffix: "PASSPHRASE", field: "passphrase" },
+  { suffix: "ALLOW_DELETE", field: "allowDelete" },
+  { suffix: "ALLOW_EDIT", field: "allowEdit" },
   { suffix: "ALIASES", field: "aliases" },
   { suffix: "PLATFORM", field: "platform" },
   { suffix: "PASSWORD", field: "password" },
   { suffix: "USERNAME", field: "username" },
+  { suffix: "BACKUP_DIR", field: "backupDir" },
+  { suffix: "EDIT_ROOT", field: "editRoot" },
   { suffix: "AGENT", field: "agent" },
   { suffix: "HOST", field: "host" },
   { suffix: "IP", field: "host" },
@@ -253,6 +281,10 @@ export function publicProfile(profile: SshServerProfile): PublicSshServerProfile
     hasPrivateKeyPath: profile.privateKeyPath !== undefined,
     hasPassphrase: profile.passphrase !== undefined,
     hasAgent: profile.agent !== undefined,
+    allowEdit: profile.allowEdit ?? false,
+    backupBeforeEdit: profile.backupBeforeEdit ?? true,
+    allowDelete: profile.allowDelete ?? false,
+    allowBinaryEdit: profile.allowBinaryEdit ?? false,
   };
 
   if (profile.displayName !== undefined) {
@@ -266,6 +298,15 @@ export function publicProfile(profile: SshServerProfile): PublicSshServerProfile
   }
   if (profile.platform !== undefined) {
     publicValue.platform = profile.platform;
+  }
+  if (profile.editRoot !== undefined) {
+    publicValue.editRoot = profile.editRoot;
+  }
+  if (profile.maxEditFileBytes !== undefined) {
+    publicValue.maxEditFileBytes = profile.maxEditFileBytes;
+  }
+  if (profile.backupDir !== undefined) {
+    publicValue.backupDir = profile.backupDir;
   }
   return publicValue;
 }
@@ -408,6 +449,16 @@ function setProfileField(
     return;
   }
 
+  if (field === "allowEdit" || field === "backupBeforeEdit" || field === "allowDelete" || field === "allowBinaryEdit") {
+    profile[field] = parseBooleanProfileField(field, value, profile.name);
+    return;
+  }
+
+  if (field === "maxEditFileBytes") {
+    profile.maxEditFileBytes = parseIntegerProfileField(field, value, profile.name, 1, 64 * 1024 * 1024);
+    return;
+  }
+
   profile[field] = value;
 }
 
@@ -440,7 +491,56 @@ function completeProfile(profile: Partial<SshServerProfile> & { name: string; so
     ...(profile.defaultDir === undefined ? {} : { defaultDir: profile.defaultDir }),
     ...(profile.description === undefined ? {} : { description: profile.description }),
     ...(profile.platform === undefined ? {} : { platform: profile.platform }),
+    ...(profile.allowEdit === undefined ? {} : { allowEdit: profile.allowEdit }),
+    ...(profile.editRoot === undefined ? {} : { editRoot: profile.editRoot }),
+    ...(profile.maxEditFileBytes === undefined ? {} : { maxEditFileBytes: profile.maxEditFileBytes }),
+    ...(profile.backupBeforeEdit === undefined ? {} : { backupBeforeEdit: profile.backupBeforeEdit }),
+    ...(profile.backupDir === undefined ? {} : { backupDir: profile.backupDir }),
+    ...(profile.allowDelete === undefined ? {} : { allowDelete: profile.allowDelete }),
+    ...(profile.allowBinaryEdit === undefined ? {} : { allowBinaryEdit: profile.allowBinaryEdit }),
   };
+}
+
+function parseBooleanProfileField(field: ProfileField, value: string, profileName: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new McpToolError("invalid_ssh_profile_boolean", "SSH profile boolean field is invalid", {
+    profileName,
+    field,
+    value,
+  });
+}
+
+function parseIntegerProfileField(
+  field: ProfileField,
+  value: string,
+  profileName: string,
+  minInclusive: number,
+  maxInclusive: number,
+): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || String(parsed) !== value.trim()) {
+    throw new McpToolError("invalid_ssh_profile_integer", "SSH profile integer field is invalid", {
+      profileName,
+      field,
+      value,
+    });
+  }
+  if (parsed < minInclusive || parsed > maxInclusive) {
+    throw new McpToolError("invalid_ssh_profile_integer", "SSH profile integer field is outside the allowed range", {
+      profileName,
+      field,
+      value,
+      minInclusive,
+      maxInclusive,
+    });
+  }
+  return parsed;
 }
 
 function normalizeProfileName(profileName: string): string {

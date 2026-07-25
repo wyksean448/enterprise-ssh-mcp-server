@@ -41,6 +41,8 @@ SSH_MCP_DEFAULT_SHELL_ALLOCATE_PTY=false
 SSH_MCP_DEFAULT_TRANSFER_CHUNK_SIZE_BYTES=4194304
 SSH_MCP_DEFAULT_TRANSFER_RESUME=yes
 SSH_MCP_DEFAULT_TRANSFER_OVERWRITE=no
+SSH_MCP_DEFAULT_MAX_EDIT_FILE_BYTES=3145728
+SSH_MCP_DEFAULT_MAX_PATCH_BYTES=1048576
 SSH_MCP_DEFAULT_LOCAL_TUNNEL_HOST=localhost
 `,
         "utf8",
@@ -58,6 +60,8 @@ SSH_MCP_DEFAULT_LOCAL_TUNNEL_HOST=localhost
         defaultTransferChunkSizeBytes: 4_194_304,
         defaultTransferResume: true,
         defaultTransferOverwrite: false,
+        defaultMaxEditFileBytes: 3_145_728,
+        defaultMaxPatchBytes: 1_048_576,
         defaultLocalTunnelHost: "localhost",
       });
     } finally {

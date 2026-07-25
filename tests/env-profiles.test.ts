@@ -17,6 +17,13 @@ SSH_MCP_SERVER_1_ALIASES=production,ai-chat-prod
 SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/ai-chat
 SSH_MCP_SERVER_1_DESCRIPTION="production server"
 SSH_MCP_SERVER_1_PLATFORM=linux
+SSH_MCP_SERVER_1_ALLOW_EDIT=true
+SSH_MCP_SERVER_1_EDIT_ROOT=/opt/ai-chat
+SSH_MCP_SERVER_1_MAX_EDIT_FILE_BYTES=2097152
+SSH_MCP_SERVER_1_BACKUP_BEFORE_EDIT=true
+SSH_MCP_SERVER_1_BACKUP_DIR=.mcp-backups
+SSH_MCP_SERVER_1_ALLOW_DELETE=false
+SSH_MCP_SERVER_1_ALLOW_BINARY_EDIT=false
 
 SSH_MCP_SERVER_2_HOST=staging.example.com
 SSH_MCP_SERVER_2_USER=deploy
@@ -36,6 +43,13 @@ SSH_MCP_SERVER_2_DISPLAY_NAME="Staging Server"
       defaultDir: "/opt/ai-chat",
       description: "production server",
       platform: "linux",
+      allowEdit: true,
+      editRoot: "/opt/ai-chat",
+      maxEditFileBytes: 2_097_152,
+      backupBeforeEdit: true,
+      backupDir: ".mcp-backups",
+      allowDelete: false,
+      allowBinaryEdit: false,
     });
     expect(profiles.get("STAGING")).toMatchObject({
       name: "STAGING",
@@ -96,6 +110,17 @@ SSH_MCP_SERVER_1_USER=root
 `);
 
     expect(() => parseProfiles(variables, "test.env")).toThrow("SSH profile is missing NAME");
+  });
+
+  it("rejects invalid profile edit config values", () => {
+    const variables = parseEnvFile(`
+SSH_MCP_SERVER_1_NAME=prod
+SSH_MCP_SERVER_1_HOST=example.com
+SSH_MCP_SERVER_1_USER=root
+SSH_MCP_SERVER_1_ALLOW_EDIT=maybe
+`);
+
+    expect(() => parseProfiles(variables, "test.env")).toThrow("SSH profile boolean field is invalid");
   });
 
   it("does not expose secrets in public profiles", () => {

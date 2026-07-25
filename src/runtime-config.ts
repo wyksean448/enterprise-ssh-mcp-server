@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   defaultTransferResume: boolean;
   defaultTransferOverwrite: boolean;
   defaultTransferAtomic: boolean;
+  defaultMaxEditFileBytes: number;
+  defaultMaxPatchBytes: number;
   defaultLocalTunnelHost: string;
   defaultRemoteTunnelHost: string;
 }
@@ -52,6 +54,8 @@ const DEFAULT_CONFIG: Omit<RuntimeConfig, "envPath"> = {
   defaultTransferResume: true,
   defaultTransferOverwrite: false,
   defaultTransferAtomic: false,
+  defaultMaxEditFileBytes: 1024 * 1024,
+  defaultMaxPatchBytes: 2 * 1024 * 1024,
   defaultLocalTunnelHost: "127.0.0.1",
   defaultRemoteTunnelHost: "127.0.0.1",
 };
@@ -183,6 +187,20 @@ export function loadRuntimeConfig(envPath: string): RuntimeConfig {
       variables,
       "SSH_MCP_DEFAULT_TRANSFER_ATOMIC",
       DEFAULT_CONFIG.defaultTransferAtomic,
+    ),
+    defaultMaxEditFileBytes: readInteger(
+      variables,
+      "SSH_MCP_DEFAULT_MAX_EDIT_FILE_BYTES",
+      DEFAULT_CONFIG.defaultMaxEditFileBytes,
+      1,
+      64 * 1024 * 1024,
+    ),
+    defaultMaxPatchBytes: readInteger(
+      variables,
+      "SSH_MCP_DEFAULT_MAX_PATCH_BYTES",
+      DEFAULT_CONFIG.defaultMaxPatchBytes,
+      1,
+      16 * 1024 * 1024,
     ),
     defaultLocalTunnelHost: readString(
       variables,
