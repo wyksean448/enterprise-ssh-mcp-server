@@ -55,9 +55,9 @@ type ProfileField =
   | "description"
   | "platform";
 
-const LEGACY_ENV_PREFIX = "SSH_SERVER_";
 const INDEXED_ENV_PREFIX = "SSH_MCP_SERVER_";
-type ParsedProfileField = { groupKey: string; defaultName: string; field: ProfileField | "profileName" };
+const LEGACY_ENV_PREFIX = "SSH_SERVER_";
+type ParsedProfileField = { groupKey: string; field: ProfileField | "profileName" };
 
 const FIELD_SUFFIXES: Array<{ suffix: string; field: ProfileField }> = [
   { suffix: "PRIVATE_KEY_PATH", field: "privateKeyPath" },
@@ -71,7 +71,6 @@ const FIELD_SUFFIXES: Array<{ suffix: string; field: ProfileField }> = [
   { suffix: "PASSWORD", field: "password" },
   { suffix: "USERNAME", field: "username" },
   { suffix: "AGENT", field: "agent" },
-  { suffix: "NAME", field: "displayName" },
   { suffix: "HOST", field: "host" },
   { suffix: "IP", field: "host" },
   { suffix: "PORT", field: "port" },
@@ -183,13 +182,14 @@ export function parseProfiles(variables: Map<string, string>, sourcePath: string
   const partialProfiles = new Map<string, Partial<SshServerProfile> & { name: string; sourcePath: string }>();
 
   for (const [key, value] of variables.entries()) {
-    const profileField = parseIndexedProfileField(key) ?? parseLegacyProfileField(key);
+    assertSupportedProfileKey(key, sourcePath);
+    const profileField = parseIndexedProfileField(key);
     if (profileField === undefined) {
       continue;
     }
 
     const existing = partialProfiles.get(profileField.groupKey) ?? {
-      name: profileField.defaultName,
+      name: "",
       sourcePath,
     };
     if (profileField.field === "profileName") {
@@ -202,12 +202,42 @@ export function parseProfiles(variables: Map<string, string>, sourcePath: string
 
   const profiles = new Map<string, SshServerProfile>();
   for (const profile of partialProfiles.values()) {
-    if (profiles.has(profile.name)) {
-      throw new McpToolError("duplicate_ssh_profile_name", "SSH profile name is duplicated", { profileName: profile.name });
+    const completedProfile = completeProfile(profile);
+    if (profiles.has(completedProfile.name)) {
+      throw new McpToolError("duplicate_ssh_profile_name", "SSH profile name is duplicated", {
+        profileName: completedProfile.name,
+      });
     }
-    profiles.set(profile.name, completeProfile(profile));
+    profiles.set(completedProfile.name, completedProfile);
   }
   return profiles;
+}
+
+function assertSupportedProfileKey(key: string, sourcePath: string): void {
+  if (key.startsWith(LEGACY_ENV_PREFIX)) {
+    throw new McpToolError("unsupported_ssh_profile_env_schema", "Unsupported SSH profile env schema", {
+      key,
+      sourcePath,
+      expected: "SSH_MCP_SERVER_<N>_<FIELD>",
+      example: "SSH_MCP_SERVER_1_NAME=prod",
+    });
+  }
+
+  if (!key.startsWith(INDEXED_ENV_PREFIX)) {
+    return;
+  }
+
+  const profileField = parseIndexedProfileField(key);
+  if (profileField !== undefined) {
+    return;
+  }
+
+  throw new McpToolError("invalid_ssh_profile_env_key", "Invalid SSH profile env key", {
+    key,
+    sourcePath,
+    expected: "SSH_MCP_SERVER_<N>_<FIELD>",
+    allowedFields: ["NAME", ...FIELD_SUFFIXES.map((field) => field.suffix)],
+  });
 }
 
 export function publicProfile(profile: SshServerProfile): PublicSshServerProfile {
@@ -323,10 +353,9 @@ function parseIndexedProfileField(key: string): ParsedProfileField | undefined {
   }
 
   const suffix = rest.slice(separatorIndex + 1);
-  if (suffix === "NAME" || suffix === "PROFILE") {
+  if (suffix === "NAME") {
     return {
       groupKey: `indexed:${index}`,
-      defaultName: indexProfileName(index),
       field: "profileName",
     };
   }
@@ -338,39 +367,8 @@ function parseIndexedProfileField(key: string): ParsedProfileField | undefined {
 
   return {
     groupKey: `indexed:${index}`,
-    defaultName: indexProfileName(index),
     field: profileField.field,
   };
-}
-
-function parseLegacyProfileField(key: string): ParsedProfileField | undefined {
-  if (!key.startsWith(LEGACY_ENV_PREFIX)) {
-    return undefined;
-  }
-
-  for (const suffix of FIELD_SUFFIXES) {
-    const expectedSuffix = `_${suffix.suffix}`;
-    if (!key.endsWith(expectedSuffix)) {
-      continue;
-    }
-
-    const rawProfileName = key.slice(LEGACY_ENV_PREFIX.length, -expectedSuffix.length);
-    if (rawProfileName.length === 0) {
-      return undefined;
-    }
-
-    return {
-      groupKey: `legacy:${normalizeProfileName(rawProfileName)}`,
-      defaultName: normalizeProfileName(rawProfileName),
-      field: suffix.field,
-    };
-  }
-
-  return undefined;
-}
-
-function indexProfileName(index: string): string {
-  return `SERVER_${index}`;
 }
 
 function setProfileName(profile: Partial<SshServerProfile> & { name: string; sourcePath: string }, value: string): void {
@@ -414,6 +412,9 @@ function setProfileField(
 }
 
 function completeProfile(profile: Partial<SshServerProfile> & { name: string; sourcePath: string }): SshServerProfile {
+  if (profile.name.length === 0) {
+    throw new McpToolError("invalid_ssh_profile", "SSH profile is missing NAME", { sourcePath: profile.sourcePath });
+  }
   if (profile.host === undefined) {
     throw new McpToolError("invalid_ssh_profile", "SSH profile is missing HOST", { profileName: profile.name });
   }
@@ -447,10 +448,6 @@ function normalizeProfileName(profileName: string): string {
 }
 
 function profileMatchesName(profile: SshServerProfile, normalizedName: string): boolean {
-  if (profile.displayName !== undefined && normalizeProfileName(profile.displayName) === normalizedName) {
-    return true;
-  }
-
   return profile.aliases.some((alias) => normalizeProfileName(alias) === normalizedName);
 }
 

@@ -43,7 +43,7 @@ const SERVER_INSTRUCTIONS = [
 const server = new McpServer(
   {
     name: "enterprise-ssh-mcp-server",
-    version: "0.1.4",
+    version: "0.2.0",
   },
   {
     instructions: SERVER_INSTRUCTIONS,
@@ -280,7 +280,7 @@ registerTool(
   "ssh_connect_profile",
   {
     title: "Open SSH profile session",
-    description: "Open a persistent SSH session using an SSH_SERVER_<PROFILE>_* profile from .env.",
+    description: "Open a persistent SSH session using an SSH_MCP_SERVER_<N>_* profile from .env.",
     inputSchema: {
       profileName: z.string().min(1),
       sessionName: z.string().min(1).optional(),

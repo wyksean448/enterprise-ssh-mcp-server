@@ -207,7 +207,7 @@ SSH_MCP_SERVER_2_ALIASES=stage
 - `SSH_MCP_SERVER_<N>_DESCRIPTION`：说明。
 - `SSH_MCP_SERVER_<N>_PLATFORM`：平台标记，例如 `linux`、`windows`、`macos`。
 
-旧版 `SSH_SERVER_<PROFILE>_<FIELD>` 格式仍然兼容，但不再推荐用于新配置。
+只支持 `SSH_MCP_SERVER_<N>_*` 这一种格式。旧版 `SSH_SERVER_<PROFILE>_<FIELD>` 不再解析，混入旧字段会直接报错，避免配置契约不一致。
 
 使用流程：
 
