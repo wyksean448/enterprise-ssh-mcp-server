@@ -170,27 +170,50 @@ Agent 友好开关：
 - `SSH_MCP_ENABLE_DANGEROUS_TOOLS=false`：隐藏 `rm/chmod/chown/tunnel/disconnect_all` 这类高风险工具。
 - 工具可见性在 MCP server 启动时确定；修改 `TOOLSET` 或危险工具开关后需要重启 MCP 客户端或新开会话。
 
-格式：
+推荐使用统一 indexed profile 格式。每台服务器都使用同一组字段，只用序号区分：
 
 ```dotenv
-SSH_SERVER_EXAMPLE_HOST=example.com
-SSH_SERVER_EXAMPLE_NAME=example
-SSH_SERVER_EXAMPLE_ALIASES=example,example-prod
-SSH_SERVER_EXAMPLE_USER=root
-SSH_SERVER_EXAMPLE_PASSWORD="change-me"
-SSH_SERVER_EXAMPLE_PORT=22
-SSH_SERVER_EXAMPLE_DEFAULT_DIR=/opt/app
-SSH_SERVER_EXAMPLE_DESCRIPTION="example server"
-SSH_SERVER_EXAMPLE_PLATFORM=linux
+SSH_MCP_SERVER_1_NAME=prod
+SSH_MCP_SERVER_1_IP=140.143.165.206
+SSH_MCP_SERVER_1_PORT=22
+SSH_MCP_SERVER_1_USER=root
+SSH_MCP_SERVER_1_PASSWORD="change-me"
+SSH_MCP_SERVER_1_ALIASES=production,ai-chat-prod
+SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/app
+SSH_MCP_SERVER_1_DESCRIPTION="production server"
+SSH_MCP_SERVER_1_PLATFORM=linux
+
+SSH_MCP_SERVER_2_NAME=staging
+SSH_MCP_SERVER_2_HOST=staging.example.com
+SSH_MCP_SERVER_2_PORT=22
+SSH_MCP_SERVER_2_USER=deploy
+SSH_MCP_SERVER_2_PRIVATE_KEY_PATH=C:/Users/yourname/.ssh/id_ed25519
+SSH_MCP_SERVER_2_ALIASES=stage
 ```
 
-这里正式 profile 名是 `EXAMPLE`。如果变量是 `SSH_SERVER_AI_CHAT_PROD_HOST`，正式名就是 `AI_CHAT_PROD`。`NAME` 是推荐短名，`ALIASES` 是逗号分隔别名；`ssh_connect_profile` 接受正式名、短名或任一别名。
+字段规范：
+
+- `SSH_MCP_SERVER_<N>_NAME`：连接名，也是 `ssh_connect_profile`、`ssh_run_profile`、`ssh_check_profile` 使用的 profileName。
+- `SSH_MCP_SERVER_<N>_IP` / `SSH_MCP_SERVER_<N>_HOST`：服务器 IP 或域名，二选一即可。
+- `SSH_MCP_SERVER_<N>_PORT`：SSH 端口，省略时默认 22。
+- `SSH_MCP_SERVER_<N>_USER` / `SSH_MCP_SERVER_<N>_USERNAME`：SSH 用户名。
+- `SSH_MCP_SERVER_<N>_PASSWORD`：密码认证。
+- `SSH_MCP_SERVER_<N>_PRIVATE_KEY`：私钥内容。
+- `SSH_MCP_SERVER_<N>_PRIVATE_KEY_PATH`：私钥文件路径。
+- `SSH_MCP_SERVER_<N>_PASSPHRASE`：私钥 passphrase。
+- `SSH_MCP_SERVER_<N>_AGENT`：SSH agent socket 或 Pageant。
+- `SSH_MCP_SERVER_<N>_ALIASES`：逗号分隔别名。
+- `SSH_MCP_SERVER_<N>_DEFAULT_DIR`：默认工作目录。
+- `SSH_MCP_SERVER_<N>_DESCRIPTION`：说明。
+- `SSH_MCP_SERVER_<N>_PLATFORM`：平台标记，例如 `linux`、`windows`、`macos`。
+
+旧版 `SSH_SERVER_<PROFILE>_<FIELD>` 格式仍然兼容，但不再推荐用于新配置。
 
 使用流程：
 
 1. `ssh_list_profiles` 查看可用 profile。返回结果只包含 `hasPassword` 等布尔值，不返回密码。
-2. `ssh_connect_profile` 传 `profileName`，例如 `AI_CHAT_PROD`、`prod` 或 `ai-chat-prod`。
-3. 拿返回的 `session.id` 调用 `ssh_exec`、`ssh_shell_open`、SFTP 或 tunnel 工具。
+2. `ssh_check_profile` 传 `profileName` 做一键远端检查，例如 `prod`。
+3. 单条命令使用 `ssh_run_profile`；需要连续多步操作时，用 `ssh_connect_profile` 创建持久 session，再调用 `ssh_exec`、`ssh_shell_open`、SFTP 或 tunnel 工具。
 
 ## 安全说明
 

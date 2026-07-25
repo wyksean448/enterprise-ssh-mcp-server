@@ -6,6 +6,63 @@ import { tmpdir } from "node:os";
 import { parseEnvFile, parseProfiles, ProfileRegistry, publicProfile } from "../src/env-profiles.js";
 
 describe("env profile parsing", () => {
+  it("parses indexed SSH_MCP_SERVER profiles with uniform field names", () => {
+    const variables = parseEnvFile(`
+SSH_MCP_SERVER_1_IP=140.143.165.206
+SSH_MCP_SERVER_1_PORT=22
+SSH_MCP_SERVER_1_NAME=prod
+SSH_MCP_SERVER_1_USER=root
+SSH_MCP_SERVER_1_PASSWORD="change-me"
+SSH_MCP_SERVER_1_ALIASES=production,ai-chat-prod
+SSH_MCP_SERVER_1_DEFAULT_DIR=/opt/ai-chat
+SSH_MCP_SERVER_1_DESCRIPTION="production server"
+SSH_MCP_SERVER_1_PLATFORM=linux
+
+SSH_MCP_SERVER_2_HOST=staging.example.com
+SSH_MCP_SERVER_2_USER=deploy
+SSH_MCP_SERVER_2_NAME=staging
+SSH_MCP_SERVER_2_DISPLAY_NAME="Staging Server"
+`);
+
+    const profiles = parseProfiles(variables, "test.env");
+
+    expect(profiles.get("PROD")).toMatchObject({
+      name: "PROD",
+      aliases: ["production", "ai-chat-prod"],
+      host: "140.143.165.206",
+      port: 22,
+      username: "root",
+      password: "change-me",
+      defaultDir: "/opt/ai-chat",
+      description: "production server",
+      platform: "linux",
+    });
+    expect(profiles.get("STAGING")).toMatchObject({
+      name: "STAGING",
+      displayName: "Staging Server",
+      host: "staging.example.com",
+      port: 22,
+      username: "deploy",
+    });
+  });
+
+  it("parses indexed profile names regardless of .env field order", () => {
+    const variables = parseEnvFile(`
+SSH_MCP_SERVER_1_USER=root
+SSH_MCP_SERVER_1_IP=example.com
+SSH_MCP_SERVER_1_NAME=prod
+`);
+
+    const profiles = parseProfiles(variables, "test.env");
+
+    expect(profiles.get("PROD")).toMatchObject({
+      name: "PROD",
+      host: "example.com",
+      username: "root",
+    });
+    expect(profiles.has("SERVER_1")).toBe(false);
+  });
+
   it("parses SSH_SERVER profiles with quoted values and underscores", () => {
     const variables = parseEnvFile(`
 SSH_SERVER_AI_CHAT_PROD_HOST=140.143.165.206
