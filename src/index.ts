@@ -64,7 +64,7 @@ const SERVER_INSTRUCTIONS = [
 const server = new McpServer(
   {
     name: "enterprise-ssh-mcp-server",
-    version: "0.3.0",
+    version: "0.3.1",
   },
   {
     instructions: SERVER_INSTRUCTIONS,
