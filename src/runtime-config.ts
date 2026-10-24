@@ -74,7 +74,17 @@ export class RuntimeConfigRegistry {
   }
 
   public reload(): RuntimeConfig {
-    this.config = loadRuntimeConfig(this.envPath);
+    return this.replace(loadRuntimeConfig(this.envPath));
+  }
+
+  public replace(config: RuntimeConfig): RuntimeConfig {
+    if (config.envPath !== this.envPath) {
+      throw new McpToolError("runtime_config_path_mismatch", "Cannot apply runtime config from a different .env path", {
+        expectedPath: this.envPath,
+        actualPath: config.envPath,
+      });
+    }
+    this.config = config;
     return this.config;
   }
 }

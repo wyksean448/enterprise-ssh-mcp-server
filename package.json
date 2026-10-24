@@ -1,6 +1,6 @@
 {
   "name": "enterprise-ssh-mcp-server",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Enterprise SSH/SFTP MCP server with persistent sessions, interactive shells, transfer jobs, and port forwarding.",
   "type": "module",
   "keywords": [
@@ -22,7 +22,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
@@ -31,7 +32,8 @@
     "test": "vitest run",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "dev:watch": "tsx watch src/index.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

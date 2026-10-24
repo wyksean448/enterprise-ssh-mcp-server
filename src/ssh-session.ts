@@ -13,6 +13,7 @@ import {
 
 import { ByteCollector, ShellRingBuffer, type WireEncoding } from "./buffers.js";
 import { McpToolError } from "./tool-result.js";
+import { redactSshUsername } from "./ssh-target.js";
 
 export interface ConnectInput {
   name?: string;
@@ -203,7 +204,7 @@ export class SshSession {
       id: this.id,
       host: this.host,
       port: this.port,
-      username: this.username,
+      username: redactSshUsername(this.username),
       connected: this.connected,
       createdAt: this.createdAt,
       lastUsedAt: this.lastUsedAt,
@@ -589,7 +590,7 @@ export class SshSession {
         reject(new McpToolError("ssh_connect_failed", err.message, {
           host: input.host,
           port: input.port,
-          username: input.username,
+          username: redactSshUsername(input.username),
         }));
       };
       const ready = (): void => {
@@ -829,7 +830,10 @@ function buildConnectConfig(input: ConnectInput, privateKey: string | undefined)
   }
   if (input.debug) {
     config.debug = (message: string): void => {
-      process.stderr.write(`[ssh2] ${message}\n`);
+      const safeMessage = /^ibssh_/i.test(input.username)
+        ? message.split(input.username).join(redactSshUsername(input.username))
+        : message;
+      process.stderr.write(`[ssh2] ${safeMessage}\n`);
     };
   }
 

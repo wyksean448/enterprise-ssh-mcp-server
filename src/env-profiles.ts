@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpToolError } from "./tool-result.js";
+import { redactSshUsername } from "./ssh-target.js";
 
 export interface SshServerProfile {
   name: string;
@@ -115,7 +116,11 @@ export class ProfileRegistry {
   }
 
   public reload(): PublicSshServerProfile[] {
-    this.profiles = loadProfilesFromEnvFile(this.envPath);
+    return this.replace(loadProfilesFromEnvFile(this.envPath));
+  }
+
+  public replace(profiles: Map<string, SshServerProfile>): PublicSshServerProfile[] {
+    this.profiles = new Map(profiles);
     return this.list();
   }
 
@@ -273,7 +278,7 @@ export function publicProfile(profile: SshServerProfile): PublicSshServerProfile
     name: profile.name,
     host: profile.host,
     port: profile.port,
-    username: profile.username,
+    username: redactSshUsername(profile.username),
     sourcePath: profile.sourcePath,
     aliases: profile.aliases,
     hasPassword: profile.password !== undefined,

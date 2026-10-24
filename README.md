@@ -100,16 +100,111 @@ npm run build
 }
 ```
 
+修改 TypeScript 源码后自动重启开发进程：
+
+```powershell
+npm run dev:watch
+```
+
+`dev:watch` 是监视文件后重启进程，不是在运行中的 MCP 进程内替换模块；重启会断开现有 SSH 会话，不应当作生产环境的无中断代码热更新。
+
 ## 能力范围
 
 - Profile：`ssh_list_profiles`、`ssh_reload_profiles`、`ssh_connect_profile`、`ssh_check_profile`、`ssh_run_profile`
+- 主机信任：`ssh_probe_host_key`、`ssh_trust_host_ca`
+- 临时 OpenSSH 连接：`ssh_run_openssh_temporary`（独立临时 `known_hosts` 文件，命令结束后删除，不修改用户永久信任文件）
 - 会话：`ssh_connect`、`ssh_list_sessions`、`ssh_disconnect`、`ssh_disconnect_all`、`ssh_rekey`
+- 原生 OpenSSH 单次命令：`ssh_run_openssh`（适用于需要 OpenSSH 主机证书算法的端点；不创建持久会话）
 - 命令：`ssh_exec`，支持 env、stdin、PTY、超时、stdout/stderr 最大字节限制、UTF-8/base64 输出
 - 远程项目编辑：`ssh_project_open`、`ssh_project_tree`、`ssh_project_search`、`ssh_project_stat`、`ssh_file_read`、`ssh_file_patch`、`ssh_project_validate_patch`、`ssh_project_apply_patch`、`ssh_project_diff`、`ssh_project_run_checks`、`ssh_edit_history`、`ssh_edit_rollback`
 - 交互 shell：`ssh_shell_open`、`ssh_shell_write`、`ssh_shell_read`、`ssh_shell_resize`、`ssh_shell_close`、`ssh_shell_list`
 - SFTP 管理：`sftp_list`、`sftp_stat`、`sftp_read_file`、`sftp_write_file`、`sftp_mkdir`、`sftp_rm`、`sftp_rename`、`sftp_chmod`、`sftp_chown`、`sftp_touch`、`sftp_symlink`、`sftp_readlink`、`sftp_realpath`
 - 大文件传输：`sftp_upload_start`、`sftp_upload_profile`、`sftp_download_start`、`sftp_download_profile`、`sftp_transfer_status`、`sftp_transfer_list`、`sftp_transfer_cancel`
 - 端口转发：`ssh_tunnel_local_start`、`ssh_tunnel_remote_start`、`ssh_tunnel_list`、`ssh_tunnel_stop`
+
+## 临时直连未配置的 SSH 设备
+
+不需要先把设备写入 `.env` Profile。调用 `ssh_connect` 时可以直接提供主机、端口和认证信息；会话只保存在当前 MCP server 进程中，连接不会自动写入配置文件。
+
+`host` 支持两种形式：
+
+1. 主机和用户名分开：`host="ssh.example.com"`、`username="deploy"`。
+2. 使用常见的 SSH 目标格式：`host="deploy@ssh.example.com"`，此时可以省略 `username`。
+
+例如，针对平台给出的 `Hostname user@ssh.example.com` 和 `Port 2222`，把 `user@ssh.example.com` 作为 `host`，把 `2222` 作为 `port` 即可。根据服务器的认证配置，可能需要提供 `privateKeyPath`、`privateKey`、`password` 或 `agent`；部分平台会将临时访问令牌直接编码在 SSH 用户名中。
+
+连接示例（建议优先使用本地私钥文件路径，而不是把私钥内容直接放进工具参数）：
+
+```json
+{
+  "host": "deploy@ssh.example.com",
+  "port": 2222,
+  "privateKeyPath": "C:/Users/yourname/.ssh/id_ed25519",
+  "name": "temporary-lab"
+}
+```
+
+使用 `ssh_probe_host_key` 可以在不进行用户认证的情况下查看主机指纹；该工具不会自动信任探测到的密钥。兼容的 `ssh2` 连接仍可显式提供 `hostHash` 和 `expectedHostHash`。对于原生 OpenSSH 主机证书，可选择永久登记经过独立核验的 CA，或使用下文的临时信任模式。不要把首次连接成功等同于已完成主机身份验证。需要长期复用的设备，再单独维护为 Profile。
+
+### InstaBox SSH token
+
+InstaBox 官方的 Connect → Create token 会生成形如 `ssh ibssh_…@<host>` 的 SSH 命令；token 本身就是 SSH 用户名，不需要额外的 SSH 私钥或密码。token 在被撤销或到期前有效，详见 [InstaBox SSH 文档](https://instabox.sh/docs/ssh)。
+
+为了避免把 bearer token 发送给伪装的 SSH 网关，`ssh_probe_host_key` 可以在不进行认证的情况下检查主机证书和签名 CA 指纹；它不会自动信任探测结果。需要通过可信渠道核验 CA 指纹，不要只因为网络探测成功就自动信任。
+
+**当前兼容性限制：** InstaBox 网关提供 `ssh-ed25519-cert-v01@openssh.com` OpenSSH 主机证书，而当前持久会话后端 `ssh2` 不支持这种主机证书算法。程序会在发送 token 前拒绝通过 `ssh_connect` 建立持久会话。可以使用 `ssh_run_openssh` 通过系统 OpenSSH 执行单次命令；它强制 `StrictHostKeyChecking=yes`，要求默认或指定的 `known_hosts` 中已有可信的 CA/主机条目。若只想临时连接，推荐使用 `ssh_run_openssh_temporary`：它读取本地 MCP 进程配置中的 host-specific CA 指纹 pin，重新探测 CA，并要求实时指纹严格匹配，然后使用独立临时 `known_hosts` 文件执行命令，并在结束后删除该文件，不改动用户永久的 `known_hosts`。工具参数不能设置或覆盖这个信任锚；未配置 pin 时会在发起网络探测前拒绝执行。当前 OpenSSH 适配器还不提供持久 Shell、SFTP、后台传输或隧道；这些需要后续统一会话抽象。
+
+本地 CA pin 配置：通过独立可信渠道核验 CA 指纹后，在 MCP 客户端的服务器 `env` 配置中设置 `SSH_MCP_TRUSTED_HOST_CA_FINGERPRINTS`。值是 JSON 对象，键为 `host:port`，值为完整 `SHA256:` 指纹；例如：
+
+```json
+{
+  "mcpServers": {
+    "enterprise-ssh": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "enterprise-ssh-mcp-server"],
+      "env": {
+        "SSH_MCP_TRUSTED_HOST_CA_FINGERPRINTS": "{\"ssh.instabox.sh:2222\":\"SHA256:替换为从可信来源独立核验的完整指纹\"}"
+      }
+    }
+  }
+}
+```
+
+请把示例指纹替换成通过独立可信渠道核验的真实值；不能把 `ssh_probe_host_key` 当前返回值直接复制进配置并将其视为已验证。该环境变量是本地信任锚，工具调用参数不能覆盖它。未配置、JSON 格式错误或指纹格式不正确时，连接和永久信任操作都会失败关闭。
+
+永久信任流程：先按上面步骤配置可信 CA pin，再调用 `ssh_probe_host_key` 检查证书，并在确认需要写入永久信任后调用 `ssh_trust_host_ca`，将探测得到的 `certificateAuthority.knownHostsEntry` 登记到本机 `~/.ssh/known_hosts`。该工具会再次校验 CA 公钥与本地 pin 完全一致；它不会自行建立新的信任锚，也不会覆盖同一主机已存在的冲突 CA。
+
+临时信任流程：无需修改永久 `known_hosts`。在 MCP 客户端环境中配置经过独立核验的 CA pin 后，调用 `ssh_run_openssh_temporary`，只需传入主机、端口、命令和本地 token 环境变量名。工具会重新探测实时 CA，并要求其指纹与本地 pin 完全匹配；验证失败时不会运行命令。验证通过后才会创建临时 trust store，命令结束即清理。工具调用不接受 `expectedHostCaFingerprint` 或 `confirmedHostCaFingerprint` 参数，防止模型把未验证的探测结果自我确认。
+
+为避免在工具参数或 `ssh.exe` 命令行中传递 token，InstaBox token 必须设置在 MCP server 进程的本地环境变量 `SSH_MCP_INSTABOX_TOKEN` 中，再通过 `usernameEnvVar` 引用；直接把 `ibssh_…` token 放进 `host` 或 `username` 参数会被拒绝。程序会将用户名短暂写入系统临时目录中的 OpenSSH 配置文件，并在子进程结束（包括启动失败）后清理临时目录。POSIX 系统会以 `0600` 创建文件；Windows 上的访问保护取决于当前用户临时目录的 ACL，因此不要在共享或权限宽松的 Windows 账户环境中使用该方式。不要把真实 token 写进仓库或共享配置。
+
+示例（仅在已核验并明确确认 InstaBox 主机 CA 指纹后使用；临时信任，不写永久 `known_hosts`）：
+
+```json
+{
+  "host": "ssh.instabox.sh",
+  "usernameEnvVar": "SSH_MCP_INSTABOX_TOKEN",
+  "port": 2222,
+  "command": "uname -a"
+}
+```
+
+`ssh_probe_host_key` 的返回值包含 `certificateAuthority.fingerprint` 和 `certificateAuthority.knownHostsEntry`。前者必须通过可信渠道独立核验后写入本地 pin 配置，后者只有在 CA 身份与 pin 匹配后才应加入 OpenSSH `known_hosts`；探测结果本身不等于信任。
+
+InstaBox token 用户名会在 Profile/会话结果和调试日志中脱敏。不要把 token 写入仓库或共享 `.env`；如果 token 已经暴露在聊天、日志或其他不可信位置，请在 InstaBox 中撤销并重新创建。
+
+### 本机真实 MCP 端到端测试
+
+如果要验证的不只是系统 `ssh.exe`，而是 MCP server 本身是否能读取本地 token、检查 CA pin、调用临时 OpenSSH 后端并清理信任文件，可以在**源码仓库根目录**的 Windows PowerShell 中运行（该测试脚本仅随源码仓库维护，不包含在 npm 发布包中）：
+
+```powershell
+npm run build
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-instabox-mcp.ps1
+```
+
+脚本会在终端中隐藏式读取 `ibssh_` token，将其仅放入本次 MCP 子进程环境，不写入项目文件；然后通过真实 MCP stdio JSON-RPC 调用 `ssh_run_openssh_temporary` 执行只读 `uname -a`，并检查退出码与 `trustStoreDeleted`。结束后会关闭 MCP 子进程并清理本次进程中的凭据引用。
+
+脚本会要求输入 CA 指纹。如果输入独立可信渠道核验后的 `SHA256:...` 指纹，会按该 pin 进行验证；输入 `USE-OBSERVED-ONCE` 则仅用于功能测试，使用此前网络探测到的指纹。**后者不构成 CA 来源的独立身份验证，不应复制到永久配置或 `known_hosts`。** 不要把 Token 输出或粘贴到聊天记录、终端命令参数或仓库中。
 
 ## Agent 使用建议
 
@@ -151,6 +246,8 @@ npm run build
 ## .env SSH Profile
 
 MCP server 启动时会读取项目根目录的 `.env`。如果你的 MCP client 从其他目录启动，也可以用 `SSH_MCP_ENV_FILE` 指定绝对路径。
+
+默认会监视 `.env` 文件：保存后约 1 秒内会尝试重新加载运行默认值和所有 Profile，解析成功后作为一个完整快照应用；编辑器保存过程中的半成品或非法配置会被拒绝，上一份有效配置继续生效。也可以调用 `ssh_reload_config` 或 `ssh_reload_profiles` 立即触发同样的原子重载。修改 `SSH_MCP_TOOLSET` 或 `SSH_MCP_ENABLE_DANGEROUS_TOOLS` 后仍需重启 MCP server，因为工具暴露集合在启动时注册。
 
 运行时默认策略：
 
