@@ -151,4 +151,27 @@ describe("temporary OpenSSH host CA trust", () => {
     })).rejects.toMatchObject({ code: "instabox_token_env_required" });
     expect(mocks.probeSshHostKey).not.toHaveBeenCalled();
   });
+
+  it("runs with a one-shot credential but still refuses an unpinned host CA", async () => {
+    delete process.env.SSH_MCP_INSTABOX_TOKEN;
+    const input = {
+      ...baseInput,
+      usernameEnvVar: undefined,
+      ephemeralToken: "ibssh_test_fixture_one_shot",
+    };
+    const result = await runOpenSshCommandWithTemporaryHostCa(input);
+    expect(result.exitCode).toBe(0);
+    expect(mocks.runOpenSshCommand).toHaveBeenCalledWith(expect.objectContaining({
+      ephemeralToken: input.ephemeralToken,
+      knownHostsPath: expect.any(String),
+    }));
+    delete process.env.SSH_MCP_TRUSTED_HOST_CA_FINGERPRINTS;
+    mocks.probeSshHostKey.mockClear();
+    mocks.runOpenSshCommand.mockClear();
+    await expect(runOpenSshCommandWithTemporaryHostCa(input)).rejects.toMatchObject({
+      code: "ssh_host_ca_not_configured",
+    });
+    expect(mocks.probeSshHostKey).not.toHaveBeenCalled();
+    expect(mocks.runOpenSshCommand).not.toHaveBeenCalled();
+  });
 });

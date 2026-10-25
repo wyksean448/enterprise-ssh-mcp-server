@@ -134,6 +134,43 @@ describe("temporary OpenSSH end-to-end adapter", () => {
     expect(spawnedArgs.at(-1)).toBe("uname -a");
   });
 
+  it("uses a one-shot token without an env variable, never puts it in argv, redacts it, and cleans files", async () => {
+    delete process.env.SSH_MCP_INSTABOX_TOKEN;
+    const ephemeralToken = "ibssh_test_fixture_ephemeral_credential";
+    let configPath = "";
+    let trustPath = "";
+    mocks.spawn.mockImplementation((_executable: string, args: string[]) => {
+      const configIndex = args.indexOf("-F");
+      configPath = args[configIndex + 1] as string;
+      const trustArg = args.find((arg) => arg.startsWith("UserKnownHostsFile="));
+      if (trustArg === undefined) throw new Error("missing isolated trust file");
+      trustPath = trustArg.slice("UserKnownHostsFile=".length);
+      expect(readFileSync(configPath, "utf8")).toContain(`User ${ephemeralToken}`);
+      expect(args.join("\u0000")).not.toContain(ephemeralToken);
+      expect(args).toContain("StrictHostKeyChecking=yes");
+      const child = makeChild();
+      queueMicrotask(() => {
+        child.stdout.write("Linux fake-host\n");
+        child.stdout.end();
+        child.stderr.write(`login for ${ephemeralToken}\n`);
+        child.stderr.end();
+        child.emit("close", 0, null);
+      });
+      return child;
+    });
+    const result = await runOpenSshCommandWithTemporaryHostCa({
+      ...input,
+      usernameEnvVar: undefined,
+      ephemeralToken,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.username).toBe("ibssh_[REDACTED]");
+    expect(result.stderr).toContain("ibssh_[REDACTED]");
+    expect(result.stderr).not.toContain(ephemeralToken);
+    expect(existsSync(configPath)).toBe(false);
+    expect(existsSync(trustPath)).toBe(false);
+  });
+
   it("cleans both temporary directories when the OpenSSH executable cannot start", async () => {
     let configPath = "";
     let knownHostsPath = "";

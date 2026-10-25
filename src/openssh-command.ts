@@ -11,6 +11,8 @@ export interface OpenSshCommandInput {
   host: string;
   username?: string;
   usernameEnvVar?: string;
+  /** One-shot InstaBox credential; the MCP client may log this tool argument. */
+  ephemeralToken?: string;
   port: number;
   command: string;
   identityFile?: string;
@@ -67,6 +69,15 @@ export function buildOpenSshArgs(input: OpenSshCommandInput, host: string, usern
 }
 
 export function resolveOpenSshTarget(input: OpenSshCommandInput, environment: NodeJS.ProcessEnv = process.env): SshTarget {
+  if (input.ephemeralToken !== undefined) {
+    if (input.usernameEnvVar !== undefined || input.username !== undefined || input.host.includes("@")) {
+      throw new McpToolError("ssh_target_username_conflict", "Choose exactly one username or token source");
+    }
+    if (input.host.toLowerCase().trim() !== "ssh.instabox.sh" || !/^ibssh_[A-Za-z0-9_-]+$/.test(input.ephemeralToken)) {
+      throw new McpToolError("instabox_token_invalid", "One-shot InstaBox token or host is invalid");
+    }
+    return parseSshTarget({ host: input.host, username: input.ephemeralToken });
+  }
   if (input.usernameEnvVar === undefined) {
     return parseSshTarget({ host: input.host, username: input.username });
   }
@@ -121,10 +132,10 @@ export async function runOpenSshCommand(input: OpenSshCommandInput): Promise<Ope
     );
   }
   if (target.host.toLowerCase() === "ssh.instabox.sh") {
-    if (input.usernameEnvVar === undefined) {
+    if (input.usernameEnvVar === undefined && input.ephemeralToken === undefined) {
       throw new McpToolError(
         "instabox_token_env_required",
-        "For InstaBox, read the SSH token from the local MCP process environment via usernameEnvVar; do not pass the bearer token in tool arguments",
+        "For InstaBox, use usernameEnvVar or an explicit one-shot ephemeralToken. MCP clients may log request arguments.",
       );
     }
     if (!/^ibssh_/i.test(target.username)) {
@@ -142,6 +153,7 @@ export async function runOpenSshCommand(input: OpenSshCommandInput): Promise<Ope
     let args: string[];
     const needsIsolatedConfig = input.knownHostsPath !== undefined
       || input.usernameEnvVar !== undefined
+      || input.ephemeralToken !== undefined
       || isInstaboxSshTokenTarget(target);
 
     if (needsIsolatedConfig) {

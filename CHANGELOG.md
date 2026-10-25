@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3 - 2026-10-25
+
+- Add an explicit, optional one-shot InstaBox `ephemeralToken` credential source for `ssh_run_openssh_temporary` and `ssh_run_openssh`; no prior per-token setup script is needed.
+- Preserve local CA fingerprint pinning or native OpenSSH known_hosts verification; an untrusted host is still rejected before sending credentials.
+- Do not expose a one-shot token in native SSH process arguments or returned output; isolate transient config files and clean them up.
+- Keep `usernameEnvVar` as the preferred option when avoiding potentially logged MCP tool arguments, and document the privacy tradeoffs.
+- Add integration coverage for one-shot tokens, response redaction, temporary file cleanup, input validation, and missing CA trust.
+
 ## 0.3.2 - 2026-10-25
 
 - Refactor MCP tool registration into domain-focused modules while preserving the stdio entry point and existing tool names.

@@ -13,11 +13,12 @@ export function registerSessionTools(ctx: Pick<ToolContext, "z" | "toToolResult"
     "ssh_run_openssh_temporary",
     {
       title: "Run one-shot command with temporary host trust",
-      description: "Run a one-shot OpenSSH command for an OpenSSH host-certificate endpoint using an isolated temporary known_hosts file that is deleted after the command. The live host CA fingerprint must match a locally configured pin in SSH_MCP_TRUSTED_HOST_CA_FINGERPRINTS; this tool cannot set or override that trust anchor. Does not modify the user's permanent known_hosts file or create a persistent session. For InstaBox, usernameEnvVar is required; inline bearer tokens are rejected.",
+      description: "One-shot native OpenSSH with isolated temporary host CA trust, requiring a locally pinned CA fingerprint. For InstaBox, use usernameEnvVar (no credential in arguments) or opt-in ephemeralToken for one-time use without setup. The latter may be retained in MCP client/tool request logs even though the server does not persist it. No persistent session or permanent known_hosts changes.",
       inputSchema: {
         host: z.string().min(1).describe("Hostname/IP; username@hostname is supported only when usernameEnvVar is omitted. For InstaBox, provide hostname only and use usernameEnvVar."),
         username: z.string().min(1).optional(),
         usernameEnvVar: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional().describe("Read the SSH username/token from this local MCP process environment variable instead of passing it in tool arguments."),
+        ephemeralToken: z.string().regex(/^ibssh_[A-Za-z0-9_-]+$/).optional().describe("Explicit one-shot InstaBox credential. Mutually exclusive with username/usernameEnvVar. WARNING: MCP clients may log this sensitive argument."),
         port: z.number().int().min(1).max(65_535).optional(),
         command: z.string().min(1),
         identityFile: z.string().min(1).optional(),
@@ -36,6 +37,7 @@ export function registerSessionTools(ctx: Pick<ToolContext, "z" | "toToolResult"
           maxOutputBytes: args.maxOutputBytes ?? runtimeConfig.get().defaultMaxOutputBytes,
           ...(args.username === undefined ? {} : { username: args.username }),
           ...(args.usernameEnvVar === undefined ? {} : { usernameEnvVar: args.usernameEnvVar }),
+          ...(args.ephemeralToken === undefined ? {} : { ephemeralToken: args.ephemeralToken }),
           ...(args.identityFile === undefined ? {} : { identityFile: args.identityFile }),
         }),
       })),
@@ -63,11 +65,12 @@ export function registerSessionTools(ctx: Pick<ToolContext, "z" | "toToolResult"
     "ssh_run_openssh",
     {
       title: "Run one-shot command via OpenSSH",
-      description: "Run one remote command with the system OpenSSH client, including endpoints that use OpenSSH host certificates. This does not create a persistent session and always requires the host/CA to be trusted in OpenSSH known_hosts; unknown hosts are rejected before authentication. For InstaBox, usernameEnvVar is required so the bearer token is never passed inline in tool arguments or process argv.",
+      description: "Run one remote command with native OpenSSH and strict known_hosts verification. For InstaBox use usernameEnvVar or opt-in ephemeralToken for one request without setup. The token is kept out of the native SSH process argv, but MCP clients may log a one-shot token argument.",
       inputSchema: {
         host: z.string().min(1).describe("Hostname/IP or username@hostname; no URL scheme or path."),
         username: z.string().min(1).optional(),
         usernameEnvVar: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional().describe("Read the SSH username/token from this local MCP process environment variable instead of passing it in tool arguments."),
+        ephemeralToken: z.string().regex(/^ibssh_[A-Za-z0-9_-]+$/).optional().describe("Explicit one-shot InstaBox credential. Mutually exclusive with username/usernameEnvVar. WARNING: MCP clients may log this sensitive argument."),
         port: z.number().int().min(1).max(65_535).optional(),
         command: z.string().min(1),
         identityFile: z.string().min(1).optional(),
@@ -87,6 +90,7 @@ export function registerSessionTools(ctx: Pick<ToolContext, "z" | "toToolResult"
           maxOutputBytes: args.maxOutputBytes ?? runtimeConfig.get().defaultMaxOutputBytes,
           ...(args.username === undefined ? {} : { username: args.username }),
           ...(args.usernameEnvVar === undefined ? {} : { usernameEnvVar: args.usernameEnvVar }),
+          ...(args.ephemeralToken === undefined ? {} : { ephemeralToken: args.ephemeralToken }),
           ...(args.identityFile === undefined ? {} : { identityFile: args.identityFile }),
           ...(args.knownHostsPath === undefined ? {} : { knownHostsPath: args.knownHostsPath }),
         }),

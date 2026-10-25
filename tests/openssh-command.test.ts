@@ -63,6 +63,26 @@ describe("native OpenSSH command adapter", () => {
     })).toThrowError(expect.objectContaining({ code: "ssh_target_username_conflict" }));
   });
 
+  it("resolves a one-shot InstaBox token without an environment variable", () => {
+    const input: OpenSshCommandInput = {
+      ...baseInput,
+      host: "ssh.instabox.sh",
+      username: undefined,
+      ephemeralToken: "ibssh_test_fixture_one_shot",
+      port: 2222,
+    };
+    expect(resolveOpenSshTarget(input, {})).toEqual({
+      host: "ssh.instabox.sh",
+      username: "ibssh_test_fixture_one_shot",
+    });
+    expect(() => resolveOpenSshTarget({ ...input, usernameEnvVar: "SSH_MCP_INSTABOX_TOKEN" }, {}))
+      .toThrowError(expect.objectContaining({ code: "ssh_target_username_conflict" }));
+    expect(() => resolveOpenSshTarget({ ...input, host: "ssh.example.com" }, {}))
+      .toThrowError(expect.objectContaining({ code: "instabox_token_invalid" }));
+    expect(() => resolveOpenSshTarget({ ...input, ephemeralToken: "bad token" }, {}))
+      .toThrowError(expect.objectContaining({ code: "instabox_token_invalid" }));
+  });
+
   it("rejects option-like hosts and conflicting token/key authentication", async () => {
     await expect(runOpenSshCommand({ ...baseInput, host: "-oProxyCommand=bad" })).rejects.toThrow(
       expect.objectContaining({ code: "ssh_target_invalid" }),
@@ -76,7 +96,7 @@ describe("native OpenSSH command adapter", () => {
     })).rejects.toThrow(expect.objectContaining({ code: "instabox_token_auth_conflict" }));
   });
 
-  it("requires InstaBox bearer tokens to come from the local environment", async () => {
+  it("rejects an embedded InstaBox bearer token without an explicit credential source", async () => {
     await expect(runOpenSshCommand({
       ...baseInput,
       host: "ibssh_inline_test_token@ssh.instabox.sh",

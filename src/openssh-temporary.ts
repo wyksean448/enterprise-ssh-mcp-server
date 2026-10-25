@@ -12,6 +12,7 @@ export interface TemporaryOpenSshCommandInput {
   host: string;
   username?: string;
   usernameEnvVar?: string;
+  ephemeralToken?: string;
   port: number;
   command: string;
   identityFile?: string;
@@ -40,10 +41,10 @@ export async function runOpenSshCommandWithTemporaryHostCa(
   const target = resolveOpenSshTarget(input);
   const host = target.host;
   if (host.toLowerCase() === "ssh.instabox.sh") {
-    if (input.usernameEnvVar === undefined) {
+    if (input.usernameEnvVar === undefined && input.ephemeralToken === undefined) {
       throw new McpToolError(
         "instabox_token_env_required",
-        "For InstaBox, read the SSH token from the local MCP process environment via usernameEnvVar; do not pass the bearer token in tool arguments",
+        "For InstaBox, use usernameEnvVar or an explicit one-shot ephemeralToken. MCP clients may log request arguments.",
       );
     }
     if (!isInstaboxSshTokenTarget(target)) {
@@ -103,6 +104,7 @@ export async function runOpenSshCommandWithTemporaryHostCa(
       knownHostsPath,
       ...(input.username === undefined ? {} : { username: input.username }),
       ...(input.usernameEnvVar === undefined ? {} : { usernameEnvVar: input.usernameEnvVar }),
+      ...(input.ephemeralToken === undefined ? {} : { ephemeralToken: input.ephemeralToken }),
       ...(input.identityFile === undefined ? {} : { identityFile: input.identityFile }),
     });
     return {

@@ -174,9 +174,11 @@ InstaBox 官方的 Connect → Create token 会生成形如 `ssh ibssh_…@<host
 
 永久信任流程：先按上面步骤配置可信 CA pin，再调用 `ssh_probe_host_key` 检查证书，并在确认需要写入永久信任后调用 `ssh_trust_host_ca`，将探测得到的 `certificateAuthority.knownHostsEntry` 登记到本机 `~/.ssh/known_hosts`。该工具会再次校验 CA 公钥与本地 pin 完全一致；它不会自行建立新的信任锚，也不会覆盖同一主机已存在的冲突 CA。
 
-临时信任流程：无需修改永久 `known_hosts`。在 MCP 客户端环境中配置经过独立核验的 CA pin 后，调用 `ssh_run_openssh_temporary`，只需传入主机、端口、命令和本地 token 环境变量名。工具会重新探测实时 CA，并要求其指纹与本地 pin 完全匹配；验证失败时不会运行命令。验证通过后才会创建临时 trust store，命令结束即清理。工具调用不接受 `expectedHostCaFingerprint` 或 `confirmedHostCaFingerprint` 参数，防止模型把未验证的探测结果自我确认。
+临时信任流程：无需修改永久 `known_hosts`。在 MCP 客户端环境中配置经过独立核验的 CA pin 后，调用 `ssh_run_openssh_temporary`。可以使用环境变量名 `usernameEnvVar`，或明确选择一次性的 `ephemeralToken`；两者不能同时传入。工具会重新探测实时 CA，并要求其指纹与本地 pin 完全匹配；验证失败时不会运行命令。验证通过后才会创建临时 trust store，命令结束即清理。工具调用不接受 `expectedHostCaFingerprint` 或 `confirmedHostCaFingerprint` 参数，防止模型把未验证的探测结果自我确认。
 
-为避免在工具参数或 `ssh.exe` 命令行中传递 token，InstaBox token 必须设置在 MCP server 进程的本地环境变量 `SSH_MCP_INSTABOX_TOKEN` 中，再通过 `usernameEnvVar` 引用；直接把 `ibssh_…` token 放进 `host` 或 `username` 参数会被拒绝。程序会将用户名短暂写入系统临时目录中的 OpenSSH 配置文件，并在子进程结束（包括启动失败）后清理临时目录。POSIX 系统会以 `0600` 创建文件；Windows 上的访问保护取决于当前用户临时目录的 ACL，因此不要在共享或权限宽松的 Windows 账户环境中使用该方式。不要把真实 token 写进仓库或共享配置。
+**认证有两种选择。** 默认推荐将 InstaBox Token 存在 MCP 子进程环境，通过 `usernameEnvVar` 引用；新增可选 `ephemeralToken` 允许在某一次 MCP 请求中直接传入凭据，不需要运行预保存脚本，执行后 MCP server 不持久化该 Token。**注意：MCP 客户端、模型平台、工具传输层及调用日志仍可能记录参数；“单次使用”不意味着聊天或工具日志不会保留秘密。** 不要在不可信或有广泛日志留存的聊天/工具链里使用该参数。对于高权限、长期有效的 Token，推荐本机安全凭据存储。直接把 `ibssh_…` token 放进 `host` 或 `username` 参数仍会被拒绝。
+
+两种方式均通过隔离的临时 OpenSSH 配置传入 SSH 用户名，使 Token 不出现在原生 `ssh.exe` 的命令行参数。程序会将 Token 短暂写入系统临时目录中的 OpenSSH 配置文件，并在子进程结束（包括启动失败）后清理；POSIX 系统会以 `0600` 创建文件，Windows 访问保护取决于临时目录 ACL。不要在共享或权限宽松的 Windows 账户环境中使用此方式，也不要把真实 token 写进仓库或共享配置。
 
 示例（仅在已核验并明确确认 InstaBox 主机 CA 指纹后使用；临时信任，不写永久 `known_hosts`）：
 
@@ -188,6 +190,19 @@ InstaBox 官方的 Connect → Create token 会生成形如 `ssh ibssh_…@<host
   "command": "uname -a"
 }
 ```
+
+`ephemeralToken` 示例（**演示占位值，不是真实凭据**；仍需事先在本机核验并固定 CA pin）：
+
+```json
+{
+  "host": "ssh.instabox.sh",
+  "port": 2222,
+  "ephemeralToken": "ibssh_test_fixture_replace_for_one_request",
+  "command": "uname -a"
+}
+```
+
+其他普通 SSH 主机可以直接调用 `ssh_connect` 并提供 `host`、`port`、`username`、`password` 或私钥信息，获得 `sessionId` 后执行命令/SFTP，再 `ssh_disconnect`。不需要新建 Profile、运行本机脚本或者重新启动 MCP。仅 InstaBox 等使用 OpenSSH 主机证书而不被 `ssh2` 支持的网关，需要用一次性原生 OpenSSH 命令工具；它目前不支持持久交互 Shell/SFTP。
 
 `ssh_probe_host_key` 的返回值包含 `certificateAuthority.fingerprint` 和 `certificateAuthority.knownHostsEntry`。前者必须通过可信渠道独立核验后写入本地 pin 配置，后者只有在 CA 身份与 pin 匹配后才应加入 OpenSSH `known_hosts`；探测结果本身不等于信任。
 
